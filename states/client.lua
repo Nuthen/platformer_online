@@ -10,6 +10,8 @@ function game:init()
     self.packetTime = 0 -- a simulated sort of packet number for time comparisons
     self.lastPacketNumber = 0
 
+    self.bufferFrames = 5
+
     self.unsequencedPackets = 0
 
     self.packetQueue = {} -- used for jitter buffer
@@ -24,7 +26,7 @@ function game:init()
 
     self.client:on("packetNumber", function(data)
         self.packetNumber = data
-        self.packetTime = data - 5
+        self.packetTime = data - self.bufferFrames
     end)
 
     self.users = {}
@@ -123,15 +125,14 @@ function game:keypressed(key, code)
         self.showRealPos = not self.showRealPos
     end
 
-    if key == 'f2' then
-        local clientId = self.client.connectId
-        local player = self.players[self.ownPlayerIndex]  -- changed here to debug
-        player:setAutono()
+    if key == '-' then
+        self.bufferFrames = self.bufferFrames - 1
+        self.packetTime = self.packetNumber - self.bufferFrames
+    elseif key == '=' then
+        self.bufferFrames = self.bufferFrames + 1
+        self.packetTime = self.packetNumber - self.bufferFrames
     end
 
-    if key == 'r' then
-        self.client:emit("resetEnemy", { })
-    end
 
     self.objects:execute("keypressed", key, code)
 end
@@ -366,11 +367,12 @@ function game:draw()
     love.graphics.print('Out of order packets: '..self.unsequencedPackets, 700, 5)
 
     love.graphics.print('Packet number: '..self.packetNumber, 700, 50)
-    love.graphics.print('Packet time  : '..self.packetTime, 700, 80)
+    love.graphics.print('Packet time      : '..self.packetTime, 700, 80)
 
     local ownPlayer = self.objects.objects[self.ownPlayerIndex]
     if ownPlayer then
-        love.graphics.print('Error dist   : '..ownPlayer.errorOffset:len(), 700, 130)
+        love.graphics.print('Error dist: '..ownPlayer.errorOffset:len(), 700, 130)
     end
     
+    love.graphics.print('Buffer frames: '..self.bufferFrames, 700, 170)
 end
