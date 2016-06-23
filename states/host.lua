@@ -138,6 +138,7 @@ function host:update(dt)
     --
     self.map:update(dt)
 
+    self.objects:execute("simulateInput")
     self.objects:execute("update", dt, self.world, true)
 
     --if self.player.position.y > 5000 then

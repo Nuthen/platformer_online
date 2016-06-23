@@ -55,36 +55,6 @@ function Player:initialize(x, y, color, peerIndex)
 	self.errorOffset = vector(0, 0)
 end
 
--- client function to enable autonomous movement
-function Player:setAutono()
-	self.autono = not self.autono
-
-	self.rotateX = self.position.x
-	self.rotateY = self.position.y
-end
-
--- used by client
-function Player:inputUpdate(time)
-	self.velocity.x, self.velocity.y = 0, 0
-
-	if self.autono then
-		local dx = math.cos(time * self.circleSize)
-		local dy = math.sin(time * self.circleSize)
-
-		self.velocity.x = dx * self.speed
-		self.velocity.y = dy * self.speed
-	end
-
-	if love.keyboard.isDown('w', 'up')    then self.velocity.y = -self.speed end
-	if love.keyboard.isDown('s', 'down')  then self.velocity.y =  self.speed end
-	if love.keyboard.isDown('a', 'left')  then self.velocity.x = -self.speed end
-	if love.keyboard.isDown('d', 'right') then self.velocity.x =  self.speed end
-
-	if self.velocity.x ~= 0 and self.velocity.y ~= 0 then -- diagonal movement is multipled to be the same overall speed
-		self.velocity.x, self.velocity.y = self.velocity.x * 0.70710678118, self.velocity.y * 0.70710678118
-	end
-end
-
 function Player:reset(world)
     -- stops position from pointing to the same memory block as startPosition
     self.position.x = self.startPosition.x
@@ -116,54 +86,9 @@ function Player:reset(world)
 end
 
 function Player:keypressed(key, code)
-	if self.peerIndex == game.ownPlayerIndex then
-	    if (key == "space" or key == "w") then
-	        self:jump()
-	    end
-
-	    if key == "x" then
-	    end
-
-	    if key == "r" then
-	        --self:reset()
-	    end
+	if (key == "space" or key == "w") then
+	    self:jump()
 	end
-end
-
-function Player:simulateMovement(dt)
-	self.acceleration = self.acceleration + self.gravity
-    self.oldVelocity = self.velocity
-    self.velocity = self.velocity + (self.acceleration - self.friction*self.velocity) * dt
-    self.desiredVelocity = (self.oldVelocity + self.velocity) * 0.5 * dt
-
-    self.position.x, self.position.y = self.position.x+self.desiredVelocity.x, self.position.y+self.desiredVelocity.y
-
-    if self.position.y > love.graphics.getHeight() then
-    	self.position.y = love.graphics.getHeight() - self.height
-    end
-end
-
--- used by the client to set the interpolation tween
--- the player will move towards the specified location
-function Player:setTween(goalX, goalY)
-	self.goalX = goalX
-	self.goalY = goalY
-
-	if self.lerpTween then
-		self.lerpTween:stop()
-	end
-
-	local dist = vector(goalX - self.position.x, goalY - self.position.y):len()
-	local time = dist / self.speed
-
-	self.lerpTween = flux.to(self.position, time, {x = goalX, y = goalY})
-end
-
--- used by the client for only the local player. The client can predict where his 
--- used by the server to predict player movement - dead-reckoning
-function Player:movePrediction(dt)
-	self.position.x = self.position.x + self.velocity.x * dt
-	self.position.y = self.position.y + self.velocity.y * dt
 end
 
 function Player:getAccelX()
@@ -192,25 +117,8 @@ function Player:getAccelX()
     return 0
 end
 
-function Player:update(dt, world, host)
-	--Entity.update(self, dt)
-    self.jumpTimer = math.max(0, self.jumpTimer - dt)
-
-    if host or self.peerIndex ~= game.ownPlayerIndex then
-    	self.acceleration.x = 0
-
-    	if self.inputLeft then
-    		self.acceleration.x = -self.speed
-    	elseif self.inputRight then
-    		self.acceleration.x = self.speed
-    	end
-
-    	if self.inputJump then
-    		self:jump()
-    	end
-
-    elseif self.peerIndex == game.ownPlayerIndex then
-	    self.acceleration.x = self:getAccelX()
+function Player:input()
+	self.acceleration.x = self:getAccelX()
 
 	    --local dashDir = self:getDash()
 	    --self.velocity.x = self.velocity.x + 5000 * dashDir
@@ -219,20 +127,38 @@ function Player:update(dt, world, host)
 	    --    self.dashTimer = self.dashTime
 	    --end
 
-	    self.inputJump = false
+	self.inputJump = false
 
-	    if game.joystick then
-	        if game.joystick:isGamepadDown("a") then
-	            self:jump()
-	       		self.inputJump = true
-	        end
-	    end
-
-	    if love.keyboard.isDown("space") or love.keyboard.isDown("w") then
+	if game.joystick then
+	    if game.joystick:isGamepadDown("a") then
 	        self:jump()
-	        self.inputJump = true
+	       	self.inputJump = true
 	    end
 	end
+
+	if love.keyboard.isDown("space") or love.keyboard.isDown("w") then
+	    self:jump()
+	    self.inputJump = true
+	end
+end
+
+function Player:simulateInput()
+	self.acceleration.x = 0
+
+    if self.inputLeft then
+    	self.acceleration.x = -self.speed
+    elseif self.inputRight then
+   		self.acceleration.x = self.speed
+    end
+
+    if self.inputJump then
+    	self:jump()
+    end
+end
+
+function Player:update(dt, world, host)
+	--Entity.update(self, dt)
+    self.jumpTimer = math.max(0, self.jumpTimer - dt)
 
     self:move(dt, world)
 
@@ -319,35 +245,8 @@ function Player:draw(showRealPos)
 
 	if showRealPos then
 		love.graphics.setColor(255, 0, 0, 165)
-		love.graphics.rectangle('fill', self.goalX, self.goalY, self.width, self.height)
+		love.graphics.rectangle('fill', self.position.x, self.position.y, self.width, self.height)
 	end
-
-	--[[
-
-	love.graphics.setColor(255, 0, 0)
-
-	if self.inputLeft then
-		love.graphics.setColor(0, 255, 0)
-	end
-
-	love.graphics.print('left', self.position.x, self.position.y-150)
-
-	love.graphics.setColor(255, 0, 0)
-
-	if self.inputRight then
-		love.graphics.setColor(0, 255, 0)
-	end
-
-	love.graphics.print('right', self.position.x, self.position.y-100)
-
-	love.graphics.setColor(255, 0, 0)
-
-	if self.inputJump then
-		love.graphics.setColor(0, 255, 0)
-	end
-
-	love.graphics.print('jump', self.position.x, self.position.y-50)
-	]]
 
 	love.graphics.setColor(255, 255, 255)
 end
