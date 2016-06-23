@@ -20,8 +20,15 @@ function connect:enter(previous, name)
 end
 
 function connect:keypressed(key, code)
-    self.addressInput:keypressed(key, code)
-    self.nameInput:keypressed(key, code)
+    if key == 'v' and love.keyboard.isDown('lctrl', 'rctrl') then
+        text = love.system.getClipboardText( )
+
+        self.addressInput:textinput(text)
+        self.nameInput:textinput(text)
+    else
+        self.addressInput:keypressed(key, code)
+        self.nameInput:keypressed(key, code)
+    end
 end
 
 function connect:keyreleased(key, code)
