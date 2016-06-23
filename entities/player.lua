@@ -251,10 +251,15 @@ function Player:update(dt, world, host)
     --    self.velocity.x = 0
     --end
 
-    if self.errorOffset:len() >= 1 then
+    local errorDist = self.errorOffset:len()
+    if errorDist >= 1 then
     	self.errorOffset = self.errorOffset * 0.85
-    elseif self.errorOffset:len() < 1 then
+    elseif errorDist < 1 then
     	self.errorOffset = self.errorOffset * 0.95
+    end
+
+    if errorDist <= 0.01 then
+    	self.errorOffset = vector(0, 0)
     end
 
     if host then
@@ -272,7 +277,7 @@ function Player:move(dt, world)
     self.desiredVelocity = (self.oldVelocity + self.velocity) * 0.5 * dt
 
     local actualX, actualY, collisions = world:move(self, self.position.x+self.desiredVelocity.x, self.position.y+self.desiredVelocity.y, function(item, other) 
-        if other.class and other:isInstanceOf(Enemy) then return false end
+        if other.class and (other:isInstanceOf(Player) or other:isInstanceOf(Enemy)) then return false end
         return "slide"
     end)
     self.position.x, self.position.y = actualX, actualY

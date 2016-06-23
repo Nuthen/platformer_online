@@ -51,7 +51,20 @@ function game:init()
     end)
 
     self.client:on("movePlayer", function(data)
-        table.insert(self.packetQueue, data)
+        if data.index == self.ownPlayerIndex then
+            local player = self.objects.objects[data.index]
+            if player then
+                player:updatePos(data.x, data.y, self.world)
+                player.velocity.x = data.vx --player.prevVelocity.x
+                player.velocity.y = data.vy --player.prevVelocity.y
+                    --player.prevVelocity.x = data.vx
+                    --player.prevVelocity.y = data.vy
+                player.isJumping = data.isJ
+                player.jumpTimer = data.jT
+            end
+        else
+            table.insert(self.packetQueue, data)
+        end
 
         local packetNumber = data.packetNum
 
