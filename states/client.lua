@@ -10,7 +10,7 @@ function game:init()
     self.packetTime = 0 -- a simulated sort of packet number for time comparisons
     self.lastPacketNumber = 0
 
-    self.bufferFrames = 5
+    self.bufferFrames = 0
 
     self.unsequencedPackets = 0
 

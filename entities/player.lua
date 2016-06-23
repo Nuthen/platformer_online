@@ -253,7 +253,7 @@ function Player:update(dt, world, host)
 
     if self.errorOffset:len() >= 1 then
     	self.errorOffset = self.errorOffset * 0.85
-    elseif self.errorOffset:len() <= 0.25 then
+    elseif self.errorOffset:len() < 1 then
     	self.errorOffset = self.errorOffset * 0.95
     end
 
