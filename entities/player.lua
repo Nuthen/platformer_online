@@ -2,6 +2,7 @@ Player = class('Player')
 
 function Player:initialize(x, y, color, peerIndex)
 	local x, y = x or math.random(0, love.graphics.getWidth()), y or math.random(0, love.graphics.getHeight())
+	self.startPosition = vector(x, y)
 	self.position = vector(x, y)
 	self.prevPosition = vector(x, y)
 	self.lastSentPos = vector(x, y)
@@ -50,6 +51,8 @@ function Player:initialize(x, y, color, peerIndex)
 	self.inputLeft = false
 	self.inputRight = false
 	self.inputJump = false
+
+	self.errorOffset = vector(0, 0)
 end
 
 -- client function to enable autonomous movement
@@ -82,6 +85,36 @@ function Player:inputUpdate(time)
 	end
 end
 
+function Player:reset(world)
+    -- stops position from pointing to the same memory block as startPosition
+    self.position.x = self.startPosition.x
+    self.position.y = self.startPosition.y
+    
+    self.desiredVelocity = vector(0, 0)
+    if world:hasItem(self) then
+        world:update(self, self.position.x+self.desiredVelocity.x, self.position.y+self.desiredVelocity.y)
+    end
+    self.oldVelocity = vector(0, 0)
+    self.velocity = vector(0, 0)
+    self.acceleration = vector(0, 0)
+    self.facing = 1
+
+    self.isJumping = false
+    --self.jumpForce = -8100
+    --self.jumpTime = 0.15
+    self.jumpTimer = 0
+
+    self.hasDashed = false
+    self.dashTime = 0.5
+    self.dashTimer = 0
+    self.dashSpeed = 4000
+
+    self.deadzone = 0.3
+
+    --self.weapon = Pistol:new()
+    --self.weapon:attach(self, self.width/2, self.height/2)
+end
+
 function Player:keypressed(key, code)
 	if self.peerIndex == game.ownPlayerIndex then
 	    if (key == "space" or key == "w") then
@@ -92,7 +125,7 @@ function Player:keypressed(key, code)
 	    end
 
 	    if key == "r" then
-	        self:reset()
+	        --self:reset()
 	    end
 	end
 end
@@ -217,6 +250,18 @@ function Player:update(dt, world, host)
     --if math.abs(self.velocity.x) <= self.velocityXTol then
     --    self.velocity.x = 0
     --end
+
+    if self.errorOffset:len() >= 1 then
+    	self.errorOffset = self.errorOffset * 0.85
+    elseif self.errorOffset:len() <= 0.25 then
+    	self.errorOffset = self.errorOffset * 0.95
+    end
+
+    if host then
+    	if self.position.y > 5000 then
+	        self:reset(world)
+	    end
+    end
 end
 
 function Player:move(dt, world)
@@ -265,7 +310,7 @@ function Player:draw(showRealPos)
 
 	love.graphics.setColor(self.color)
 
-	love.graphics.rectangle('fill', self.position.x, self.position.y, self.width, self.height)
+	love.graphics.rectangle('fill', self.position.x + self.errorOffset.x, self.position.y + self.errorOffset.y, self.width, self.height)
 
 	if showRealPos then
 		love.graphics.setColor(255, 0, 0, 165)
@@ -324,6 +369,8 @@ function Player:stopJump()
 end
 
 function Player:updatePos(x, y, world)
+	self.errorOffset = self.position + self.errorOffset - vector(x, y)
+
 	self.position = vector(x, y)
     world:update(self, x, y)
 end

@@ -7,7 +7,12 @@ function game:init()
     self.ownPlayerIndex = 0
 
     self.packetNumber = 0
+    self.packetTime = 0 -- a simulated sort of packet number for time comparisons
+    self.lastPacketNumber = 0
+
     self.unsequencedPackets = 0
+
+    self.packetQueue = {} -- used for jitter buffer
 
     self.client = socket.Client:new("localhost", 22122, true)
     self.client.timeout = 0 -- 8
@@ -15,6 +20,11 @@ function game:init()
     
     self.client:on("connect", function(data)
         self.client:emit("identify", self.username)
+    end)
+
+    self.client:on("packetNumber", function(data)
+        self.packetNumber = data
+        self.packetTime = data - 5
     end)
 
     self.users = {}
@@ -39,38 +49,12 @@ function game:init()
     end)
 
     self.client:on("movePlayer", function(data)
-        local player = self.objects.objects[data.index]
+        table.insert(self.packetQueue, data)
+
         local packetNumber = data.packetNum
 
-        if packetNumber < self.packetNumber then
-            self.unsequencedPackets = self.unsequencedPackets + 1
-        else
+        if packetNumber > self.packetNumber then
             self.packetNumber = packetNumber
-
-            if player then
-                if data.index ~= self.ownPlayerIndex then
-                    --player:setTween(data.x, data.y)
-                else
-                    --player.position.x = data.x
-                    --player.position.y = data.y
-                    --player.goalX = data.x
-                    --player.goalY = data.y
-                end
-
-                player:updatePos(data.x, data.y, self.world)
-                player.velocity.x = data.vx --player.prevVelocity.x
-                player.velocity.y = data.vy --player.prevVelocity.y
-                --player.prevVelocity.x = data.vx
-                --player.prevVelocity.y = data.vy
-                player.isJumping = data.isJ
-                player.jumpTimer = data.jT
-
-                if data.index ~= self.ownPlayerIndex then
-                    player.inputLeft = data.inputLeft
-                    player.inputRight = data.inputRight
-                    player.inputJump = data.inputJump
-                end
-            end
         end
     end)
 
@@ -82,6 +66,9 @@ function game:init()
     self.timer = 0
     self.tick = 1/60
     self.tock = 0
+
+    self.serverTick = 1/30
+    self.serverTock = 0
 
     self.showRealPos = false
 
@@ -161,7 +148,55 @@ function game:textinput(text)
 
 end
 
+-- this is for jitter buffering
+-- packets are delayed to reduce inconsistent packet receiving
+function game:dequeuePackets()
+    for i = #self.packetQueue, 1, -1 do
+        local data = self.packetQueue[i]
+
+        local player = self.objects.objects[data.index]
+        local packetNumber = data.packetNum
+
+        if packetNumber <= self.packetTime then
+            if packetNumber < self.lastPacketNumber then
+                self.unsequencedPackets = self.unsequencedPackets + 1
+            else
+                self.lastPacketNumber = packetNumber
+
+                if player then
+                    if data.index ~= self.ownPlayerIndex then
+                        --player:setTween(data.x, data.y)
+                    else
+                        --player.position.x = data.x
+                        --player.position.y = data.y
+                        --player.goalX = data.x
+                        --player.goalY = data.y
+                    end
+
+                    player:updatePos(data.x, data.y, self.world)
+                    player.velocity.x = data.vx --player.prevVelocity.x
+                    player.velocity.y = data.vy --player.prevVelocity.y
+                    --player.prevVelocity.x = data.vx
+                    --player.prevVelocity.y = data.vy
+                    player.isJumping = data.isJ
+                    player.jumpTimer = data.jT
+
+                    if data.index ~= self.ownPlayerIndex then
+                        player.inputLeft = data.inputLeft
+                        player.inputRight = data.inputRight
+                        player.inputJump = data.inputJump
+                    end
+                end
+            end
+
+            table.remove(self.packetQueue, i)
+        end
+    end
+end
+
 function game:update(dt)
+    self:dequeuePackets()
+
     --
     self.map:update(dt)
 
@@ -174,6 +209,7 @@ function game:update(dt)
 
     self.timer = self.timer + dt
     self.tock = self.tock + dt
+    self.serverTock = self.serverTock + dt
     
     -- only do an input update for your own player
     --local clientId = self.client.connectId
@@ -226,6 +262,12 @@ function game:update(dt)
                 ownPlayer.velocity.y = yVel
             --end
         end
+    end
+
+    if self.serverTock >= self.serverTick then
+        self.serverTock = 0
+
+        self.packetTime = self.packetTime + 1
     end
 end
 
@@ -323,6 +365,12 @@ function game:draw()
 
     love.graphics.print('Out of order packets: '..self.unsequencedPackets, 700, 5)
 
+    love.graphics.print('Packet number: '..self.packetNumber, 700, 50)
+    love.graphics.print('Packet time  : '..self.packetTime, 700, 80)
 
+    local ownPlayer = self.objects.objects[self.ownPlayerIndex]
+    if ownPlayer then
+        love.graphics.print('Error dist   : '..ownPlayer.errorOffset:len(), 700, 130)
+    end
     
 end

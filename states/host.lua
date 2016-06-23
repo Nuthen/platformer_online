@@ -13,7 +13,8 @@ function host:init()
         self:sendUserlist()
         self:sendAllPlayers(peer)
         self:addPlayer(peer)
-        --self:sendAllEnemies(peer)
+
+        peer:emit("packetNumber", self.packetNumber)
     end)
 
     self.server:on("identify", function(username, peer)
@@ -69,13 +70,6 @@ function host:init()
     self.timer = 0
     self.tick = 1/30 -- server sends 30 state packets per second
     self.tock = 0
-
-    self.enemyTick = 5
-    self.enemyTock = 0
-    self.enemyDifferenceTick = 0
-    self.currentEnemyIndex = 1
-
-    self.enemyMax = 10000
 
     self.objects = Group:new()
 
@@ -166,7 +160,6 @@ function host:update(dt)
 
     self.timer = self.timer + dt
     self.tock = self.tock + dt
-    self.enemyTock = self.enemyTock + dt
 
     self.server:update(dt)
 
@@ -206,11 +199,12 @@ function host:update(dt)
 
             --if xPos ~= player.lastSentPos.x or yPos ~= player.lastSentPos.y then
                 self.server:emitToAll("movePlayer", {packetNum = self.packetNumber, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump}, "unsequenced")
-                self.packetNumber = self.packetNumber + 1
 
                 player.lastSentPos.x, player.lastSentPos.y = xPos, yPos
             --end
         end
+
+        self.packetNumber = self.packetNumber + 1
     end
 end
 
