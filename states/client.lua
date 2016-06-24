@@ -31,6 +31,8 @@ function clientState:init()
     -- networking
     self.ownPlayerIndex = 0
     self.packetNumberRec = 0
+    self.packetNumberPlayer = {} -- stores latest packet received for each player
+    self.packetNumberEnemy = {} -- stores latest packet received for each enemy
     self.packetNumberSend = 0
     self.unsequencedPackets = 0
 
@@ -60,12 +62,16 @@ function clientState:init()
         local index = data.index
         local player = Player:new(self.world, data.x, data.y, data.color)
         self.players:add(index, player)
+
+        self.packetNumberPlayer[index] = 0
     end)
 
     self.client:on("newEnemy", function(data)
         local index = data.index
         local enemy = Enemy:new(data.x, data.y)
         self.enemies:add(index, enemy)
+
+        self.packetNumberEnemy[index] = 0
     end)
 
     self.client:on("index", function(data)
@@ -73,13 +79,14 @@ function clientState:init()
     end)
 
     self.client:on("playerState", function(data)
-        local player = self.players.objects[data.index]
+        local index = data.index
+        local player = self.players.objects[index]
         local packetNumber = data.packetNum
 
-        if packetNumber < self.packetNumberRec then
+        if packetNumber < self.packetNumberPlayer[index] then
             self.unsequencedPackets = self.unsequencedPackets + 1
         else
-            self.packetNumberRec = packetNumber
+            self.packetNumberPlayer[index] = packetNumber
 
             if player then
                 player:updatePos(data.x, data.y, self.world)
@@ -100,13 +107,14 @@ function clientState:init()
     end)
 
     self.client:on("enemyState", function(data)
-        local enemy = self.enemies.objects[data.index]
+        local index = data.index
+        local enemy = self.enemies.objects[index]
         local packetNumber = data.packetNum
 
-        if packetNumber < self.packetNumberRec then
+        if packetNumber < self.packetNumberEnemy[index] then
             self.unsequencedPackets = self.unsequencedPackets + 1
         else
-            self.packetNumberRec = packetNumber
+            self.packetNumberEnemy[index] = packetNumber
 
             if enemy then
                 enemy:updatePos(data.x, data.y, self.world)

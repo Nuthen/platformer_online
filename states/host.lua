@@ -101,7 +101,7 @@ function host:addPlayer(peer)
     self.players:add(index, player)
 
     peer:emit("index", peer.server:index()) -- tell the client who they are
-    self.server:emitToAll("newPlayer", {x = player.position.x, y = player.position.y, color = player.color, index = index})
+    self.server:emitToAll("newPlayer", {index = index, x = player.position.x, y = player.position.y, color = player.color})
 end
 
 function host:addEnemy(x, y)
@@ -109,18 +109,18 @@ function host:addEnemy(x, y)
     local enemy = Enemy:new(x, y) -- starting location
     self.enemies:add(index, enemy)
 
-    self.server:emitToAll("newEnemy", {x = enemy.position.x, y = enemy.position.y, index = index})
+    self.server:emitToAll("newEnemy", {index = index, x = enemy.position.x, y = enemy.position.y})
 end
 
 function host:sendAllPlayers(peer)
     for k, player in pairs(self.players.objects) do
-        peer:emit("newPlayer", {x = player.position.x, y = player.position.y, color = player.color, index = k})
+        peer:emit("newPlayer", {index = k, x = player.position.x, y = player.position.y, color = player.color})
     end
 end
 
 function host:sendAllEnemies(peer)
     for k, enemy in pairs(self.enemies.objects) do
-        peer:emit("newEnemy", {x = enemy.position.x, y = enemy.position.y, index = k})
+        peer:emit("newEnemy", {index = k, x = enemy.position.x, y = enemy.position.y})
     end
 end
 
