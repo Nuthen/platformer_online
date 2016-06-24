@@ -1,7 +1,16 @@
 host = {}
 
 function host:init()
-    self.ownPlayerIndex = 0
+    self.unsequencedPackets = 0
+    self.packetNumberRec = {} -- stores latest packet received from each player
+    self.packetNumber = 0
+
+    self.timers = {}
+    self.timers.userlist = 0
+
+    self.timer = 0
+    self.tick = 1/30 -- server sends 30 state packets per second
+    self.tock = 0
 
     self.server = socket.Server:new("*", 22122, 0)
     print('--- server ---')
@@ -30,46 +39,38 @@ function host:init()
             end
         end
 
-        local connectId = peer.server:index()-- self.server:getClient(peer).connectId
-        self.peerNames[connectId] = username
+        local index = peer.server:index()
+        self.peerNames[index] = username
         self:sendUserlist()
+        self.packetNumberRec[index] = 0
     end)
 
     self.server:on("disconnect", function(data, peer)
-        local connectId = peer.server:index() -- self.server:getClient(peer).connectId
-        self.peerNames[connectId] = nil
-        self.peerNames[connectId] = "disconnected user"
+        local index = peer.server:index()
+        self.peerNames[index] = nil
+        self.peerNames[index] = "disconnected user"
         self:sendUserlist()
+
+        -- player should also be removed from the Group here
     end)
 
-    self.server:on("entityState", function(data, peer)
-        local connectId = peer.server:index() -- self.server:getClient(peer).connectId
-        local player = self.objects.objects[connectId]
+    self.server:on("playerInput", function(data, peer)
+        local index = peer.server:index()
+        local player = self.objects.objects[index]
 
-        -- disabled so that server controls the positon of the player, not the client
-        --[[
-        player.position.x = data.x
-        player.position.y = data.y
+        local packetNumber = data.packetNum
+        local receivedPacket = self.packetNumberRec[index]
 
-        player.velocity.x = data.vx
-        player.velocity.y = data.vy
-        player.isJumping = data.isJ
-        player.jumpTimer = data.jT
-        ]]
+        if packetNumber < receivedPacket then
+            self.unsequencedPackets = self.unsequencedPackets + 1
+        else
+            self.packetNumberRec[index] = packetNumber
 
-        player.inputLeft = data.inputLeft
-        player.inputRight = data.inputRight
-        player.inputJump = data.inputJump
-
-        --self.server:log("entityState", "true" and data.inputLeft or "false" ..' '.. "true" and data.inputRight or "false" ..' '.. "true" and data.inputJump or "false" )
+            player.inputLeft = data.inputLeft
+            player.inputRight = data.inputRight
+            player.inputJump = data.inputJump
+        end
     end)
-
-    self.timers = {}
-    self.timers.userlist = 0
-
-    self.timer = 0
-    self.tick = 1/30 -- server sends 30 state packets per second
-    self.tock = 0
 
     self.objects = Group:new()
 
@@ -87,21 +88,17 @@ function host:init()
     self.objects.onRemove = function(obj)
         self.world:remove(obj)
     end
-
-    self.packetNumber = 0
 end
 
 function host:addPlayer(peer)
-    local index = peer.server:index() -- self.server:getClient(peer).connectId
-    local player = Player:new(1700, 1300)
+    local index = peer.server:index()
+    local player = Player:new(1700, 1300) -- starting location
     player.peerIndex = index
 
-    --table.insert(self.players, connectId, player) -- changed here to debug
     self.objects:add(index, player)
 
-    self.server:emitToAll("newPlayer", {x = player.position.x, y = player.position.y, color = player.color, index = index}) -- changed here to debug
-
-    peer:emit("index", peer.server:index()) -- changed here to debug
+    peer:emit("index", peer.server:index()) -- tell the client who they are
+    self.server:emitToAll("newPlayer", {x = player.position.x, y = player.position.y, color = player.color, index = index})
 end
 
 function host:sendAllPlayers(peer)
@@ -122,8 +119,6 @@ function host:enter()
     self.map = sti.new("assets/levels/1.lua", {"bump"})
 
     self.map:bump_init(self.world)
-
-    --self.player = self.objects:add(Player:new(1700, 1300))
 end
 
 function host:sendUserlist()
@@ -135,43 +130,25 @@ function host:sendUserlist()
 end
 
 function host:update(dt)
-    --
     self.map:update(dt)
 
     self.objects:execute("simulateInput")
     self.objects:execute("update", dt, self.world, true)
 
-    --if self.player.position.y > 5000 then
-    --    self.player:reset()
-    --end
-
+    -- calculate the average positon between all players and place the camera there
+    local num = #self.objects.objects
+    if num == 0 then num = 1 end -- ensure no division by 0
     local pos = vector(0, 0)
     for k, obj in pairs(self.objects.objects) do
-        pos = pos + obj.position * (1/2)
-        --self.camera:lockPosition(obj.position.x, obj.position.y)
-        
-        --break
+        pos = pos + obj.position * (1/num)
     end
-    --pos = pos / #self.objects
-
     self.camera:lockPosition(pos.x, pos.y)
-    --self.camera:lockPosition(1700, 1300)
-    --
 
 
     self.timer = self.timer + dt
     self.tock = self.tock + dt
 
     self.server:update(dt)
-
-    --for k, player in pairs(self.players) do
-        --player:movePrediction(dt)
-    --    player:bumpUpdate(dt)
-    --end
-
-    --for k, enemy in pairs(self.enemies) do
-    --    enemy:update(dt, self.timer, self.players)
-    --end
 
     if self.tock >= self.tick then
         self.tock = 0
@@ -188,7 +165,6 @@ function host:update(dt)
                 end
             end
         end
-        --
 
         for k, player in pairs(self.objects.objects) do
             local xPos = math.floor(player.position.x*1000)/1000
@@ -198,11 +174,12 @@ function host:update(dt)
             local isJumping = player.isJumping
             local jumpTimer = player.jumpTimer
 
-            --if xPos ~= player.lastSentPos.x or yPos ~= player.lastSentPos.y then
-                self.server:emitToAll("movePlayer", {packetNum = self.packetNumber, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump}, "unsequenced")
-
-                player.lastSentPos.x, player.lastSentPos.y = xPos, yPos
-            --end
+            self.server:emitToAll("playerState", {packetNum = self.packetNumber, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump}, "unsequenced")
+        
+            player.position.x = xPos
+            player.position.y = yPos
+            player.velocity.x = xVel
+            player.velocity.y = yVel
         end
 
         self.packetNumber = self.packetNumber + 1
@@ -210,7 +187,7 @@ function host:update(dt)
 end
 
 function host:draw()
-    ---
+    -- draw the map and objects
     love.graphics.setColor(255, 255, 255)
 
     self.camera:attach()
@@ -218,12 +195,12 @@ function host:draw()
     self.map:setDrawRange(self.camera.x-love.graphics.getWidth()/2, self.camera.y-love.graphics.getHeight()/2, love.graphics.getWidth(), love.graphics.getHeight())
     self.map:draw()
 
+    -- todo: draw own player in front
     self.objects:execute("draw")
 
     self.camera:detach() 
 
-    --
-
+    -- draw performance text and network details
     love.graphics.setColor(125, 125, 125)
 
     love.graphics.setFont(font[16])
@@ -267,5 +244,6 @@ function host:draw()
     packetsReceivedSec = math.floor(packetsReceivedSec*10000)/10000
     love.graphics.print('Received Packets: '.. packetsReceived, 370, 450)
     love.graphics.print('| ' .. packetsReceivedSec .. ' packet/s', 594, 450)
-    
+
+    love.graphics.print('Out of order packets: '..self.unsequencedPackets, 700, 5)
 end

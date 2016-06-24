@@ -1,11 +1,12 @@
-game = {}
+clientState = {}
 
 inspect = require "lib.inspect"
 require "entities.input"
 
-function game:init()
+function clientState:init()
     self.ownPlayerIndex = 0
-    self.packetNumber = 0
+    self.packetNumberRec = 0
+    self.packetNumberSend = 0
     self.unsequencedPackets = 0
 
     self.client = socket.Client:new("localhost", 22122, true)
@@ -17,7 +18,7 @@ function game:init()
     end)
 
     self.client:on("packetNumber", function(data)
-        self.packetNumber = data
+        self.packetNumberRec = data
     end)
 
     self.users = {}
@@ -32,7 +33,7 @@ function game:init()
 
     self.client:on("newPlayer", function(data)
         local index = data.index
-        local player = Player:new(data.x, data.y, data.color, index)
+        local player = Player:new(data.x, data.y, data.color)
         self.objects:add(index, player)
     end)
 
@@ -40,14 +41,14 @@ function game:init()
         self.ownPlayerIndex = data
     end)
 
-    self.client:on("movePlayer", function(data)
+    self.client:on("playerState", function(data)
         local player = self.objects.objects[data.index]
         local packetNumber = data.packetNum
 
-        if packetNumber < self.packetNumber then
+        if packetNumber < self.packetNumberRec then
             self.unsequencedPackets = self.unsequencedPackets + 1
         else
-            self.packetNumber = packetNumber
+            self.packetNumberRec = packetNumber
 
             if player then
                 player:updatePos(data.x, data.y, self.world)
@@ -95,7 +96,7 @@ function game:init()
     end
 end
 
-function game:enter(prev, hostname, username)
+function clientState:enter(prev, hostname, username)
     self.client.hostname = hostname
     self.client:connect()
     
@@ -114,12 +115,12 @@ function game:enter(prev, hostname, username)
     self.map:bump_init(self.world)
 end
 
-function game:quit()
+function clientState:quit()
     -- if client is not disconnected, the server won't remove it until the game closes
     self.client:disconnect()
 end
 
-function game:keypressed(key, code)
+function clientState:keypressed(key, code)
     if key == 'f1' then
         self.showRealPos = not self.showRealPos
     end
@@ -128,26 +129,28 @@ function game:keypressed(key, code)
     ownPlayer:keypressed(key, code)
 end
 
-function game:keyreleased(key, code)
+function clientState:keyreleased(key, code)
 
 end
 
-function game:mousereleased(x, y, button)
+function clientState:mousereleased(x, y, button)
 
 end
 
-function game:textinput(text)
+function clientState:textinput(text)
 
 end
 
-function game:update(dt)
+function clientState:update(dt)
     --
     self.map:update(dt)
 
-    local ownPlayer = self.objects.objects[self.ownPlayerIndex]
-
-    if ownPlayer then
-        ownPlayer:input()
+    for k, player in pairs(self.objects.objects) do
+        if k == self.ownPlayerIndex then
+            player:input()
+        else
+            player:simulateInput()
+        end
     end
 
     self.objects:execute("update", dt, self.world, false)
@@ -155,6 +158,7 @@ function game:update(dt)
     self.timer = self.timer + dt
     self.tock = self.tock + dt
     
+    local ownPlayer = self.objects.objects[self.ownPlayerIndex]
 
     if ownPlayer then
         self.camera:lockPosition(ownPlayer.position.x, ownPlayer.position.y)
@@ -176,19 +180,20 @@ function game:update(dt)
             local jumpTimer = ownPlayer.jumpTimer
 
             -- possible location for optimization: only send an update if it has changed since the last acked packet from the server
-            self.client:emit("entityState", {x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = ownPlayer.inputLeft, inputRight = ownPlayer.inputRight, inputJump = ownPlayer.inputJump})
-
+            self.client:emit("playerInput", {packetNum = self.packetNumberSend, inputLeft = ownPlayer.inputLeft, inputRight = ownPlayer.inputRight, inputJump = ownPlayer.inputJump}, "unsequenced")
 
             -- quantize player positions to match simulations
             ownPlayer.position.x = xPos
             ownPlayer.position.y = yPos
             ownPlayer.velocity.x = xVel
             ownPlayer.velocity.y = yVel
+
+            self.packetNumberSend = self.packetNumberSend + 1
         end
     end
 end
 
-function game:draw()
+function clientState:draw()
     love.graphics.setColor(255, 255, 255)
 
     -- draw the map and objects
@@ -250,7 +255,7 @@ function game:draw()
 
     love.graphics.print('Out of order packets: '..self.unsequencedPackets, 700, 5)
 
-    love.graphics.print('Packet number: '..self.packetNumber, 700, 50)
+    love.graphics.print('Packet number: '..self.packetNumberRec, 700, 50)
 
     local ownPlayer = self.objects.objects[self.ownPlayerIndex]
     if ownPlayer then

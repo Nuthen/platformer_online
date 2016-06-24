@@ -15,7 +15,7 @@ end
 
 function connect:enter(previous, name)
     if name then
-        state.switch(game, "127.0.0.1", name)
+        state.switch(clientState, "127.0.0.1", name)
     end
 end
 

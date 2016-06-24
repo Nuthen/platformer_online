@@ -1,52 +1,26 @@
 Player = class('Player')
 
-function Player:initialize(x, y, color, peerIndex)
+function Player:initialize(x, y, color)
 	local x, y = x or math.random(0, love.graphics.getWidth()), y or math.random(0, love.graphics.getHeight())
 	self.startPosition = vector(x, y)
 	self.position = vector(x, y)
-	self.prevPosition = vector(x, y)
-	self.lastSentPos = vector(x, y)
 
 	self.velocity = vector(0, 0)
-	self.prevVelocity = vector(0, 0)
-	self.lastSentVel = vector(0, 0)
-
-	------
-	--self.position = vector(x, y)
     self.oldVelocity = vector(0, 0)
-    self.velocity = vector(0, 0)
     self.acceleration = vector(0, 0)
+
     self.friction = 25
     self.gravity = vector(0, 200)
 
-	self.width = 40
-	self.height = 40
+	self.width = 20
+	self.height = 50
 	self.speed = 5750
 	self.color = color or {math.random(0, 225), math.random(0, 225), math.random(0, 225)}
-
-	-- this is the goal position to be tweened towards
-	-- on the client, it slowly moves it to where the server says it should be
-	self.goalX = self.position.x
-	self.goalY = self.position.y
-
-	self.showRealPos = false
-	self.autono = false
-
-	self.rotateX = 0
-	self.rotateY = 0
-
-	self.circleSize = math.random(5, 15)
 
     self.isJumping = false
     self.jumpForce = -15000 -- inconsistent jumping from the original?
     self.jumpTime = 0.15
     self.jumpTimer = 0
-
-	-- this is the value of a player in the array of players, as determined by the server
-	-- there is an issue with peerIndex and disconnect
-	self.peerIndex = peerIndex or 0
-
-	self.lerpTween = nil -- stores the tween for interpolation of a non-client player
 
 	self.inputLeft = false
 	self.inputRight = false
