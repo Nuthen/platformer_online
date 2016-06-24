@@ -13,6 +13,7 @@ function Entity:initialize(x, y, w, h)
     self.width = w or 20
     self.height = h or 50
     self.color = {255, 255, 255, 255}
+    self.center = vector(x + self.width/2, y + self.height/2)
 
     self.isJumping = false
     self.jumpForce = -8100
@@ -29,6 +30,8 @@ function Entity:update(dt)
     elseif self.acceleration.x < 0 then
         self.facing = -1
     end
+
+    self.center = vector(self.position.x + self.width/2, self.position.y + self.height/2)
 
     self.jumpTimer = math.max(0, self.jumpTimer - dt)
 end

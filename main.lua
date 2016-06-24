@@ -21,9 +21,10 @@ require 'states.connect'
 require 'states.host'
 
 -- entities
+require 'entities.object'
+require 'entities.entity'
 require 'entities.player'
 require 'entities.enemy'
-
 function love.load(arg)
     _font = 'assets/font/OpenSans-Regular.ttf'
     _fontBold = 'assets/font/OpenSans-Bold.ttf'

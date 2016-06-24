@@ -1,9 +1,30 @@
 host = {}
 
 function host:init()
-    self.unsequencedPackets = 0
+    self.players = Group:new()
+    self.enemies = Group:new()
+
+    self.players.onAdd = function(obj)
+        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
+    end
+
+    self.enemies.onAdd = function(obj)
+        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
+    end
+
+    self.players.onRemove = function(obj)
+        self.world:remove(obj)
+    end
+
+    self.enemies.onRemove = function(obj)
+        self.world:remove(obj)
+    end
+
+
+    -- networking
     self.packetNumberRec = {} -- stores latest packet received from each player
-    self.packetNumber = 0
+    self.packetNumberSend = 0
+    self.unsequencedPackets = 0
 
     self.timers = {}
     self.timers.userlist = 0
@@ -21,9 +42,10 @@ function host:init()
     self.server:on("connect", function(data, peer)
         self:sendUserlist()
         self:sendAllPlayers(peer)
+        self:sendAllEnemies(peer)
         self:addPlayer(peer)
 
-        peer:emit("packetNumber", self.packetNumber)
+        peer:emit("packetNumber", self.packetNumberSend)
     end)
 
     self.server:on("identify", function(username, peer)
@@ -56,7 +78,7 @@ function host:init()
 
     self.server:on("playerInput", function(data, peer)
         local index = peer.server:index()
-        local player = self.objects.objects[index]
+        local player = self.players.objects[index]
 
         local packetNumber = data.packetNum
         local receivedPacket = self.packetNumberRec[index]
@@ -71,39 +93,34 @@ function host:init()
             player.inputJump = data.inputJump
         end
     end)
-
-    self.objects = Group:new()
-
-    self.objects.onAdd = function(obj)
-        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
-
-        -- dynamically recreate the enemies group based on the objects group
-        self.enemies = self.objects:filter(function(obj)
-            if obj.class then
-                return obj:isInstanceOf(Enemy) or obj.class:isSubclassOf(Enemy)
-            end
-        end)
-    end
-
-    self.objects.onRemove = function(obj)
-        self.world:remove(obj)
-    end
 end
 
 function host:addPlayer(peer)
     local index = peer.server:index()
-    local player = Player:new(1700, 1300) -- starting location
-    player.peerIndex = index
-
-    self.objects:add(index, player)
+    local player = Player:new(self.world, 1700, 1300) -- starting location
+    self.players:add(index, player)
 
     peer:emit("index", peer.server:index()) -- tell the client who they are
     self.server:emitToAll("newPlayer", {x = player.position.x, y = player.position.y, color = player.color, index = index})
 end
 
+function host:addEnemy(x, y)
+    local index = #self.enemies.objects + 1 -- get an index that is guarenteed to be open?
+    local enemy = Enemy:new(x, y) -- starting location
+    self.enemies:add(index, enemy)
+
+    self.server:emitToAll("newEnemy", {x = enemy.position.x, y = enemy.position.y, index = index})
+end
+
 function host:sendAllPlayers(peer)
-    for k, player in pairs(self.objects.objects) do
+    for k, player in pairs(self.players.objects) do
         peer:emit("newPlayer", {x = player.position.x, y = player.position.y, color = player.color, index = k})
+    end
+end
+
+function host:sendAllEnemies(peer)
+    for k, enemy in pairs(self.enemies.objects) do
+        peer:emit("newEnemy", {x = enemy.position.x, y = enemy.position.y, index = k})
     end
 end
 
@@ -119,6 +136,10 @@ function host:enter()
     self.map = sti.new("assets/levels/1.lua", {"bump"})
 
     self.map:bump_init(self.world)
+
+    self:addEnemy(1000, 1300)
+    self:addEnemy(2000, 1300)
+    self:addEnemy(1500, 1300)
 end
 
 function host:sendUserlist()
@@ -132,19 +153,42 @@ end
 function host:update(dt)
     self.map:update(dt)
 
-    self.objects:execute("simulateInput")
-    self.objects:execute("update", dt, self.world, true)
+    self.players:execute("simulateInput")
+    self.players:execute("update", dt, self.world)
+
+    self.enemies:each(function(enemy)
+        local closestPlayer = nil
+        local closestDist = 1000000
+        self.players:each(function(player)
+            local dist = (enemy.position - player.position):len()
+            if dist < closestDist then
+                closestPlayer = player
+                closestDist = dist
+            end
+        end)
+
+        enemy.nearestPlayer = closestPlayer
+    end)
+
+    self.enemies:execute("update", dt, self.world)
+
+    self.players:each(function(player)
+        if player.position.y > 5000 then
+            player:reset(self.world)
+        end
+    end)
 
     -- calculate the average positon between all players and place the camera there
-    local num = #self.objects.objects
+    local num = #self.players.objects
     if num == 0 then num = 1 end -- ensure no division by 0
     local pos = vector(0, 0)
-    for k, obj in pairs(self.objects.objects) do
+    for k, obj in pairs(self.players.objects) do
         pos = pos + obj.position * (1/num)
     end
     self.camera:lockPosition(pos.x, pos.y)
 
 
+    -- networking
     self.timer = self.timer + dt
     self.tock = self.tock + dt
 
@@ -166,7 +210,9 @@ function host:update(dt)
             end
         end
 
-        for k, player in pairs(self.objects.objects) do
+        -- to fix, packet numbers send all the same number each frame, but some may be received while others are not
+
+        for k, player in pairs(self.players.objects) do
             local xPos = math.floor(player.position.x*1000)/1000
             local yPos = math.floor(player.position.y*1000)/1000
             local xVel = math.floor(player.velocity.x*1000)/1000
@@ -174,31 +220,52 @@ function host:update(dt)
             local isJumping = player.isJumping
             local jumpTimer = player.jumpTimer
 
-            self.server:emitToAll("playerState", {packetNum = self.packetNumber, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump}, "unsequenced")
+            -- possible location for optimization: only send an update if it has changed since the last acked packet from the server
+            self.server:emitToAll("playerState", {packetNum = self.packetNumberSend, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump}, "unsequenced")
         
+            -- quantize player positions to match simulations
             player.position.x = xPos
             player.position.y = yPos
             player.velocity.x = xVel
             player.velocity.y = yVel
         end
 
-        self.packetNumber = self.packetNumber + 1
+        for k, enemy in pairs(self.enemies.objects) do
+            local xPos = math.floor(enemy.position.x*1000)/1000
+            local yPos = math.floor(enemy.position.y*1000)/1000
+            local xVel = math.floor(enemy.velocity.x*1000)/1000
+            local yVel = math.floor(enemy.velocity.y*1000)/1000
+            local isJumping = enemy.isJumping
+            local jumpTimer = enemy.jumpTimer
+
+            -- possible location for optimization: only send an update if it has changed since the last acked packet from the server
+            self.server:emitToAll("enemyState", {packetNum = self.packetNumberSend, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, near = enemy.nearestPlayerIndex}, "unsequenced")
+        
+            -- quantize player positions to match simulations
+            enemy.position.x = xPos
+            enemy.position.y = yPos
+            enemy.velocity.x = xVel
+            enemy.velocity.y = yVel
+        end
+
+        self.packetNumberSend = self.packetNumberSend + 1
     end
 end
 
 function host:draw()
-    -- draw the map and objects
     love.graphics.setColor(255, 255, 255)
 
+    -- draw the map and objects
     self.camera:attach()
 
     self.map:setDrawRange(self.camera.x-love.graphics.getWidth()/2, self.camera.y-love.graphics.getHeight()/2, love.graphics.getWidth(), love.graphics.getHeight())
     self.map:draw()
 
-    -- todo: draw own player in front
-    self.objects:execute("draw")
+    self.players:execute("draw")
+    self.enemies:execute("draw")
 
     self.camera:detach() 
+
 
     -- draw performance text and network details
     love.graphics.setColor(125, 125, 125)

@@ -1,39 +1,31 @@
-Player = class('Player')
+Player = class("Player", Entity)
 
-function Player:initialize(x, y, color)
+function Player:initialize(world, x, y, color)
 	local x, y = x or math.random(0, love.graphics.getWidth()), y or math.random(0, love.graphics.getHeight())
+	Entity.initialize(self, x, y)
+
 	self.startPosition = vector(x, y)
-	self.position = vector(x, y)
-
-	self.velocity = vector(0, 0)
-    self.oldVelocity = vector(0, 0)
-    self.acceleration = vector(0, 0)
-
-    self.friction = 25
-    self.gravity = vector(0, 200)
-
-	self.width = 20
-	self.height = 50
+    self.friction = 15
+    self.gravity = vector(0, 100)
 	self.speed = 5750
+
+	self.xAxis = "leftx"
+    self.yAxis = "lefty"
+    self.deadzone = 0.3
+    self.inputMode = "keyboardmouse"
+    self.aim = vector(0, 0)
+
+    self.velocityXTol = 0
+
+    self:reset(world)
+
 	self.color = color or {math.random(0, 225), math.random(0, 225), math.random(0, 225)}
-
-    self.isJumping = false
-    self.jumpForce = -15000 -- inconsistent jumping from the original?
-    self.jumpTime = 0.15
-    self.jumpTimer = 0
-
-	self.inputLeft = false
-	self.inputRight = false
-	self.inputJump = false
-
-	self.errorOffset = vector(0, 0)
 end
 
 function Player:reset(world)
     -- stops position from pointing to the same memory block as startPosition
     self.position.x = self.startPosition.x
     self.position.y = self.startPosition.y
-    
     self.desiredVelocity = vector(0, 0)
     if world:hasItem(self) then
         world:update(self, self.position.x+self.desiredVelocity.x, self.position.y+self.desiredVelocity.y)
@@ -44,8 +36,8 @@ function Player:reset(world)
     self.facing = 1
 
     self.isJumping = false
-    --self.jumpForce = -8100
-    --self.jumpTime = 0.15
+    self.jumpForce = -8100
+    self.jumpTime = 0.15
     self.jumpTimer = 0
 
     self.hasDashed = false
@@ -53,22 +45,72 @@ function Player:reset(world)
     self.dashTimer = 0
     self.dashSpeed = 4000
 
-    self.deadzone = 0.3
+    self.inputLeft = false
+	self.inputRight = false
+	self.inputJump = false
 
-    --self.weapon = Pistol:new()
+	self.errorOffset = vector(0, 0)
+
+	--self.weapon = Pistol:new()
     --self.weapon:attach(self, self.width/2, self.height/2)
+end
+
+function Player:joystickpressed(joystick, button)
+    -- A button
+    if button == 1 then
+        self:jump()
+    end
+    
+    -- B button
+    if button == 2 then
+
+    end
+
+    -- X button
+    if button == 3 then
+
+    end
+
+    -- Y button
+    if button == 4 then
+        --self:reset()
+    end
+
+    -- Left button
+    if button == 5 then
+        self:dash(-1)
+    end
+    
+    -- Right button
+    if button == 6 then
+        self:dash(1)
+    end
 end
 
 function Player:keypressed(key, code)
 	if (key == "space" or key == "w") then
 	    self:jump()
 	end
+
+	if key == "lshift" then
+        self:dash(self.facing)
+    end
 end
 
-function Player:getAccelX()
-    if game.joystick then
-        local leftXAxis = game.joystick:getGamepadAxis(self.xAxis)
-        local leftYAxis = game.joystick:getGamepadAxis(self.yAxis)
+function Player:mousepressed(x, y, button)
+    if button == 2 then
+        self:dash(self.facing)
+    end
+end
+
+function Player:mousemoved(x, y, dx, dy, isTouch)
+    self.inputMode = "keyboardmouse"
+end
+
+function Player:getAccelX(joystick)
+    if joystick then
+        local leftXAxis = joystick:getGamepadAxis(self.xAxis)
+        local leftYAxis = joystick:getGamepadAxis(self.yAxis)
         local angle = math.atan2(leftYAxis, leftXAxis)
         local deadzone = self.deadzone
 
@@ -91,8 +133,8 @@ function Player:getAccelX()
     return 0
 end
 
-function Player:input()
-	self.acceleration.x = self:getAccelX()
+function Player:input(joystick)
+	self.acceleration.x = self:getAccelX(joystick)
 
 	    --local dashDir = self:getDash()
 	    --self.velocity.x = self.velocity.x + 5000 * dashDir
@@ -103,8 +145,8 @@ function Player:input()
 
 	self.inputJump = false
 
-	if game.joystick then
-	    if game.joystick:isGamepadDown("a") then
+	if joystick then
+	    if joystick:isGamepadDown("a") then
 	        self:jump()
 	       	self.inputJump = true
 	    end
@@ -130,18 +172,21 @@ function Player:simulateInput()
     end
 end
 
+function Player:dash(dir)
+    if self.dashTimer <= 0 then
+        self.velocity.x = self.velocity.x + self.dashSpeed * dir
+        self.dashTimer = self.dashTime
+    end
+end
+
+function Player:shoot()
+    self.weapon:shoot()
+end
+
 function Player:update(dt, world, host)
-	--Entity.update(self, dt)
-    self.jumpTimer = math.max(0, self.jumpTimer - dt)
+	Entity.update(self, dt)
 
     self:move(dt, world)
-
-    -- change facing direction depending on last acceleration
-    if self.acceleration.x > 0 then
-        self.facing = 1
-    elseif self.acceleration.x < 0 then
-        self.facing = -1
-    end
 
     --self.dashTimer = math.max(0, self.dashTimer - dt)
 
@@ -160,12 +205,6 @@ function Player:update(dt, world, host)
 
     if errorDist <= 0.01 then
     	self.errorOffset = vector(0, 0)
-    end
-
-    if host then
-    	if self.position.y > 5000 then
-	        self:reset(world)
-	    end
     end
 end
 
@@ -223,27 +262,6 @@ function Player:draw(showRealPos)
 	end
 
 	love.graphics.setColor(255, 255, 255)
-end
-
-
-function Player:jump()
-    if not self.isJumping and (self.acceleration.y == 0) then
-        self.isJumping = true
-        self.jumpTimer = self.jumpTime
-    end
-
-    if self.isJumping and self.jumpTimer > 0 then
-        self.acceleration.y = self.jumpForce
-    end
-end
-
--- this function should be called in the user-defined collision code
--- when the entity hits the ground, or must stop jumping immediately
-function Player:stopJump()
-    self.isJumping = false
-    self.acceleration.y = 0
-    self.velocity.y = 0
-    self.jumpTimer = 0
 end
 
 function Player:updatePos(x, y, world)

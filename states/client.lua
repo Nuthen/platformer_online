@@ -4,6 +4,31 @@ inspect = require "lib.inspect"
 require "entities.input"
 
 function clientState:init()
+    local joysticks = love.joystick.getJoysticks()
+    self.joystick = joysticks[1]
+
+
+    self.players = Group:new()
+    self.enemies = Group:new()
+
+    self.players.onAdd = function(obj)
+        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
+    end
+
+    self.enemies.onAdd = function(obj)
+        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
+    end
+
+    self.players.onRemove = function(obj)
+        self.world:remove(obj)
+    end
+
+    self.enemies.onRemove = function(obj)
+        self.world:remove(obj)
+    end
+
+
+    -- networking
     self.ownPlayerIndex = 0
     self.packetNumberRec = 0
     self.packetNumberSend = 0
@@ -33,8 +58,14 @@ function clientState:init()
 
     self.client:on("newPlayer", function(data)
         local index = data.index
-        local player = Player:new(data.x, data.y, data.color)
-        self.objects:add(index, player)
+        local player = Player:new(self.world, data.x, data.y, data.color)
+        self.players:add(index, player)
+    end)
+
+    self.client:on("newEnemy", function(data)
+        local index = data.index
+        local enemy = Enemy:new(data.x, data.y)
+        self.enemies:add(index, enemy)
     end)
 
     self.client:on("index", function(data)
@@ -42,7 +73,7 @@ function clientState:init()
     end)
 
     self.client:on("playerState", function(data)
-        local player = self.objects.objects[data.index]
+        local player = self.players.objects[data.index]
         local packetNumber = data.packetNum
 
         if packetNumber < self.packetNumberRec then
@@ -52,6 +83,7 @@ function clientState:init()
 
             if player then
                 player:updatePos(data.x, data.y, self.world)
+
                 player.velocity.x = data.vx
                 player.velocity.y = data.vy
 
@@ -67,6 +99,30 @@ function clientState:init()
         end
     end)
 
+    self.client:on("enemyState", function(data)
+        local enemy = self.enemies.objects[data.index]
+        local packetNumber = data.packetNum
+
+        if packetNumber < self.packetNumberRec then
+            self.unsequencedPackets = self.unsequencedPackets + 1
+        else
+            self.packetNumberRec = packetNumber
+
+            if enemy then
+                enemy:updatePos(data.x, data.y, self.world)
+
+                enemy.velocity.x = data.vx
+                enemy.velocity.y = data.vy
+
+                enemy.isJumping = data.isJ
+                enemy.jumpTimer = data.jT
+
+                local nearestIndex = data.near
+                enemy.nearestPlayer = self.players.objects[nearestIndex]
+            end
+        end
+    end)
+
     self.chatting = false
     self.chatInput = Input:new(0, 0, 400, 100, font[24])
     self.chatInput:centerAround(love.graphics.getWidth()/2, love.graphics.getHeight()/2-150)
@@ -77,23 +133,6 @@ function clientState:init()
     self.tock = 0
 
     self.showRealPos = false
-
-    self.objects = Group:new()
-
-    self.objects.onAdd = function(obj)
-        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
-
-        -- dynamically recreate the enemies group based on the objects group
-        self.enemies = self.objects:filter(function(obj)
-            if obj.class then
-                return obj:isInstanceOf(Enemy) or obj.class:isSubclassOf(Enemy)
-            end
-        end)
-    end
-
-    self.objects.onRemove = function(obj)
-        self.world:remove(obj)
-    end
 end
 
 function clientState:enter(prev, hostname, username)
@@ -120,45 +159,40 @@ function clientState:quit()
     self.client:disconnect()
 end
 
-function clientState:keypressed(key, code)
-    if key == 'f1' then
-        self.showRealPos = not self.showRealPos
-    end
-
-    local ownPlayer = self.objects.objects[self.ownPlayerIndex]
-    ownPlayer:keypressed(key, code)
-end
-
-function clientState:keyreleased(key, code)
-
-end
-
-function clientState:mousereleased(x, y, button)
-
-end
-
-function clientState:textinput(text)
-
-end
-
 function clientState:update(dt)
-    --
     self.map:update(dt)
 
-    for k, player in pairs(self.objects.objects) do
+    self.players:each(function(player, k)
         if k == self.ownPlayerIndex then
-            player:input()
+            player:input(self.joystick)
         else
             player:simulateInput()
         end
-    end
+    end)
 
-    self.objects:execute("update", dt, self.world, false)
-
-    self.timer = self.timer + dt
-    self.tock = self.tock + dt
     
-    local ownPlayer = self.objects.objects[self.ownPlayerIndex]
+    
+    self.enemies:each(function(enemy)
+        local closestPlayer = nil
+        local closestDist = 1000000
+        self.players:each(function(player)
+            local dist = (enemy.position - player.position):len()
+            if dist < closestDist then
+                closestPlayer = player
+                closestDist = dist
+            end
+        end)
+
+        enemy.nearestPlayer = closestPlayer
+    end)
+
+    self.client:update(dt) -- receive packets before the update to better influence simulation
+
+    self.players:execute("update", dt, self.world)
+    self.enemies:execute("update", dt, self.world)
+
+    
+    local ownPlayer = self.players.objects[self.ownPlayerIndex]
 
     if ownPlayer then
         self.camera:lockPosition(ownPlayer.position.x, ownPlayer.position.y)
@@ -166,7 +200,11 @@ function clientState:update(dt)
         self.camera:lockPosition(1700, 1300)
     end
 
-    self.client:update(dt)
+
+    -- networking
+    self.timer = self.timer + dt
+    self.tock = self.tock + dt
+
 
     if self.tock >= self.tick then
         self.tock = 0
@@ -202,7 +240,9 @@ function clientState:draw()
     self.map:setDrawRange(self.camera.x-love.graphics.getWidth()/2, self.camera.y-love.graphics.getHeight()/2, love.graphics.getWidth(), love.graphics.getHeight())
     self.map:draw()
 
-    self.objects:execute("draw", self.showRealPos)
+    -- todo: draw own player in front
+    self.players:execute("draw", self.showRealPos)
+    self.enemies:execute("draw", self.showRealPos)
 
     self.camera:detach()
 
@@ -210,9 +250,9 @@ function clientState:draw()
     -- draw performance and network text
     love.graphics.setColor(125, 125, 125)
 
+    love.graphics.setFont(font[16])
     love.graphics.print('FPS: '..love.timer.getFPS(), 300, 5)
 
-    love.graphics.setFont(font[20])
     love.graphics.print("client : " .. self.username, 5, 5)
 
     love.graphics.print("You are currently playing with:", 5, 40)
@@ -257,8 +297,64 @@ function clientState:draw()
 
     love.graphics.print('Packet number: '..self.packetNumberRec, 700, 50)
 
-    local ownPlayer = self.objects.objects[self.ownPlayerIndex]
+    local ownPlayer = self.players.objects[self.ownPlayerIndex]
     if ownPlayer then
         love.graphics.print('Error dist: '..ownPlayer.errorOffset:len(), 700, 130)
     end
+end
+
+-- INPUT CALLBACKS --
+
+function clientState:keypressed(key, code)
+    if key == 'f1' then
+        self.showRealPos = not self.showRealPos
+    end
+
+    local ownPlayer = self.players.objects[self.ownPlayerIndex]
+    if ownPlayer then
+        ownPlayer:keypressed(key, code)
+    end
+end
+
+function clientState:mousepressed(x, y, button)
+    local ownPlayer = self.players.objects[self.ownPlayerIndex]
+    if ownPlayer then
+        ownPlayer:mousepressed(x, y, button)
+    end
+end
+
+function clientState:mousemoved(x, y, dx, dy, isTouch)
+    local ownPlayer = self.players.objects[self.ownPlayerIndex]
+    if ownPlayer then
+        ownPlayer:mousemoved(x, y, dx, dy, isTouch)
+    end
+end
+
+function clientState:joystickpressed(joystick, button)
+    local ownPlayer = self.players.objects[self.ownPlayerIndex]
+    if ownPlayer then
+        ownPlayer:joystickpressed(joystick, button)
+    end
+end
+
+function clientState:joystickadded(joystick)
+    self.joystick = joystick
+end
+
+function clientState:joystickremoved(joystick)
+    if joystick == self.joystick then
+        self.joystick = nil
+    end
+end
+
+function clientState:keyreleased(key, code)
+
+end
+
+function clientState:mousereleased(x, y, button)
+
+end
+
+function clientState:textinput(text)
+
 end

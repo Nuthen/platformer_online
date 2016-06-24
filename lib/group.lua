@@ -98,6 +98,13 @@ function Group:filter(f)
     return filtered
 end
 
+function Group:each(f, ...)
+    for k, object in pairs(self.objects) do
+        f(object, k, ...)
+    end
+end
+
+
 -- local g = Group:new()
 -- local player = g:add("player", Group:new())
 -- local enemy = g:add("enemy", Group:new())
