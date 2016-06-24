@@ -33,7 +33,7 @@ end
 
 function connect:keyreleased(key, code)
     if self.addressInput.text ~= "" and key == "return" then
-        state.switch(game, self.addressInput.text, self.nameInput.text)
+        state.switch(clientState, self.addressInput.text, self.nameInput.text)
     end
 end
 
