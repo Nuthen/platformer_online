@@ -25,6 +25,9 @@ require 'entities.object'
 require 'entities.entity'
 require 'entities.player'
 require 'entities.enemy'
+require 'entities.weapon.weapon'
+require 'entities.weapon.pistol'
+
 function love.load(arg)
     _font = 'assets/font/OpenSans-Regular.ttf'
     _fontBold = 'assets/font/OpenSans-Bold.ttf'
