@@ -2,24 +2,14 @@ host = {}
 
 function host:init()
     self.players = Group:new()
-    self.enemies = Group:new()
 
     self.players.onAdd = function(obj)
-        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
-    end
-
-    self.enemies.onAdd = function(obj)
         self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
     end
 
     self.players.onRemove = function(obj)
         self.world:remove(obj)
     end
-
-    self.enemies.onRemove = function(obj)
-        self.world:remove(obj)
-    end
-
 
     -- networking
     self.packetNumberRec = {} -- stores latest packet received from each player
@@ -42,7 +32,6 @@ function host:init()
     self.server:on("connect", function(data, peer)
         self:sendUserlist()
         self:sendAllPlayers(peer)
-        self:sendAllEnemies(peer)
         self:addPlayer(peer)
 
         peer:emit("packetNumber", self.packetNumberSend)
@@ -104,23 +93,9 @@ function host:addPlayer(peer)
     self.server:emitToAll("newPlayer", {index = index, x = player.position.x, y = player.position.y, color = player.color})
 end
 
-function host:addEnemy(x, y)
-    local index = #self.enemies.objects + 1 -- get an index that is guarenteed to be open?
-    local enemy = Enemy:new(x, y) -- starting location
-    self.enemies:add(index, enemy)
-
-    self.server:emitToAll("newEnemy", {index = index, x = enemy.position.x, y = enemy.position.y})
-end
-
 function host:sendAllPlayers(peer)
     for k, player in pairs(self.players.objects) do
         peer:emit("newPlayer", {index = k, x = player.position.x, y = player.position.y, color = player.color})
-    end
-end
-
-function host:sendAllEnemies(peer)
-    for k, enemy in pairs(self.enemies.objects) do
-        peer:emit("newEnemy", {index = k, x = enemy.position.x, y = enemy.position.y})
     end
 end
 
@@ -136,10 +111,6 @@ function host:enter()
     self.map = sti.new("assets/levels/1.lua", {"bump"})
 
     self.map:bump_init(self.world)
-
-    self:addEnemy(1000, 1300)
-    self:addEnemy(2000, 1300)
-    self:addEnemy(1500, 1300)
 end
 
 function host:sendUserlist()
@@ -155,22 +126,6 @@ function host:update(dt)
 
     self.players:execute("simulateInput")
     self.players:execute("update", dt, self.world)
-
-    self.enemies:each(function(enemy)
-        local closestPlayer = nil
-        local closestDist = 1000000
-        self.players:each(function(player)
-            local dist = (enemy.position - player.position):len()
-            if dist < closestDist then
-                closestPlayer = player
-                closestDist = dist
-            end
-        end)
-
-        enemy.nearestPlayer = closestPlayer
-    end)
-
-    self.enemies:execute("update", dt, self.world)
 
     self.players:each(function(player)
         if player.position.y > 5000 then
@@ -230,24 +185,6 @@ function host:update(dt)
             player.velocity.y = yVel
         end
 
-        for k, enemy in pairs(self.enemies.objects) do
-            local xPos = math.floor(enemy.position.x*1000)/1000
-            local yPos = math.floor(enemy.position.y*1000)/1000
-            local xVel = math.floor(enemy.velocity.x*1000)/1000
-            local yVel = math.floor(enemy.velocity.y*1000)/1000
-            local isJumping = enemy.isJumping
-            local jumpTimer = enemy.jumpTimer
-
-            -- possible location for optimization: only send an update if it has changed since the last acked packet from the server
-            self.server:emitToAll("enemyState", {packetNum = self.packetNumberSend, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, near = enemy.nearestPlayerIndex}, "unsequenced")
-        
-            -- quantize player positions to match simulations
-            enemy.position.x = xPos
-            enemy.position.y = yPos
-            enemy.velocity.x = xVel
-            enemy.velocity.y = yVel
-        end
-
         self.packetNumberSend = self.packetNumberSend + 1
     end
 end
@@ -262,7 +199,6 @@ function host:draw()
     self.map:draw()
 
     self.players:execute("draw")
-    self.enemies:execute("draw")
 
     self.camera:detach() 
 

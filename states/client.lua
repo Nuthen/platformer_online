@@ -9,21 +9,12 @@ function clientState:init()
 
 
     self.players = Group:new()
-    self.enemies = Group:new()
 
     self.players.onAdd = function(obj)
         self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
     end
 
-    self.enemies.onAdd = function(obj)
-        self.world:add(obj, obj.position.x, obj.position.y, obj.width, obj.height)
-    end
-
     self.players.onRemove = function(obj)
-        self.world:remove(obj)
-    end
-
-    self.enemies.onRemove = function(obj)
         self.world:remove(obj)
     end
 
@@ -32,7 +23,6 @@ function clientState:init()
     self.ownPlayerIndex = 0
     self.packetNumberRec = 0
     self.packetNumberPlayer = {} -- stores latest packet received for each player
-    self.packetNumberEnemy = {} -- stores latest packet received for each enemy
     self.packetNumberSend = 0
     self.unsequencedPackets = 0
 
@@ -66,14 +56,6 @@ function clientState:init()
         self.packetNumberPlayer[index] = 0
     end)
 
-    self.client:on("newEnemy", function(data)
-        local index = data.index
-        local enemy = Enemy:new(data.x, data.y)
-        self.enemies:add(index, enemy)
-
-        self.packetNumberEnemy[index] = 0
-    end)
-
     self.client:on("index", function(data)
         self.ownPlayerIndex = data
     end)
@@ -102,31 +84,6 @@ function clientState:init()
                     player.inputRight = data.inputRight
                     player.inputJump = data.inputJump
                 end
-            end
-        end
-    end)
-
-    self.client:on("enemyState", function(data)
-        local index = data.index
-        local enemy = self.enemies.objects[index]
-        local packetNumber = data.packetNum
-
-        if packetNumber < self.packetNumberEnemy[index] then
-            self.unsequencedPackets = self.unsequencedPackets + 1
-        else
-            self.packetNumberEnemy[index] = packetNumber
-
-            if enemy then
-                enemy:updatePos(data.x, data.y, self.world)
-
-                enemy.velocity.x = data.vx
-                enemy.velocity.y = data.vy
-
-                enemy.isJumping = data.isJ
-                enemy.jumpTimer = data.jT
-
-                local nearestIndex = data.near
-                enemy.nearestPlayer = self.players.objects[nearestIndex]
             end
         end
     end)
@@ -178,27 +135,9 @@ function clientState:update(dt)
         end
     end)
 
-    
-    
-    self.enemies:each(function(enemy)
-        local closestPlayer = nil
-        local closestDist = 1000000
-        self.players:each(function(player)
-            local dist = (enemy.position - player.position):len()
-            if dist < closestDist then
-                closestPlayer = player
-                closestDist = dist
-            end
-        end)
-
-        enemy.nearestPlayer = closestPlayer
-    end)
-
     self.client:update(dt) -- receive packets before the update to better influence simulation
 
     self.players:execute("update", dt, self.world)
-    self.enemies:execute("update", dt, self.world)
-
     
     local ownPlayer = self.players.objects[self.ownPlayerIndex]
 
@@ -250,7 +189,6 @@ function clientState:draw()
 
     -- todo: draw own player in front
     self.players:execute("draw", self.showRealPos)
-    self.enemies:execute("draw", self.showRealPos)
 
     self.camera:detach()
 

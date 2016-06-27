@@ -51,8 +51,8 @@ function Player:reset(world)
 
 	self.errorOffset = vector(0, 0)
 
-	--self.weapon = Pistol:new()
-    --self.weapon:attach(self, self.width/2, self.height/2)
+	self.weapon = Pistol:new()
+    self.weapon:attach(self, self.width/2, self.height/2)
 end
 
 function Player:joystickpressed(joystick, button)
@@ -135,14 +135,7 @@ end
 
 function Player:input(joystick)
 	self.acceleration.x = self:getAccelX(joystick)
-
-	    --local dashDir = self:getDash()
-	    --self.velocity.x = self.velocity.x + 5000 * dashDir
-	    --if dashDir ~= 0 then
-	    --    self.hasDashed = true
-	    --    self.dashTimer = self.dashTime
-	    --end
-
+    
 	self.inputJump = false
 
 	if joystick then
@@ -172,13 +165,6 @@ function Player:simulateInput()
     end
 end
 
-function Player:dash(dir)
-    if self.dashTimer <= 0 then
-        self.velocity.x = self.velocity.x + self.dashSpeed * dir
-        self.dashTimer = self.dashTime
-    end
-end
-
 function Player:shoot()
     self.weapon:shoot()
 end
@@ -187,15 +173,6 @@ function Player:update(dt, world, host)
 	Entity.update(self, dt)
 
     self:move(dt, world)
-
-    --self.dashTimer = math.max(0, self.dashTimer - dt)
-
-    --self.hasDashed = self.dashTimer > 0
-
-    --if math.abs(self.velocity.x) <= self.velocityXTol then
-    --    self.velocity.x = 0
-    --end
-
     local errorDist = self.errorOffset:len()
     if errorDist >= 1 then
     	self.errorOffset = self.errorOffset * 0.85
@@ -269,4 +246,6 @@ function Player:updatePos(x, y, world)
 
 	self.position = vector(x, y)
     world:update(self, x, y)
+
+    self.weapon:draw()
 end
