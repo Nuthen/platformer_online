@@ -79,10 +79,16 @@ function clientState:init()
                 player.isJumping = data.isJ
                 player.jumpTimer = data.jT
 
+                player.health = data.health
+
                 if data.index ~= self.ownPlayerIndex then
                     player.inputLeft = data.inputLeft
                     player.inputRight = data.inputRight
                     player.inputJump = data.inputJump
+
+                    player.weapon.target.x = data.targetX
+                    player.weapon.target.y = data.targetY
+
                 end
             end
         end
@@ -129,7 +135,10 @@ function clientState:update(dt)
 
     self.players:each(function(player, k)
         if k == self.ownPlayerIndex then
-            player:input(self.joystick)
+            player:input(self.joystick, self.camera)
+            if player.inputShoot then
+                self.client:emit("playerShoot", {packetNum = self.packetNumberSend, targetX = player.weapon.target.x, targetY = player.weapon.target.y})
+            end
         else
             player:simulateInput()
         end
@@ -165,7 +174,7 @@ function clientState:update(dt)
             local jumpTimer = ownPlayer.jumpTimer
 
             -- possible location for optimization: only send an update if it has changed since the last acked packet from the server
-            self.client:emit("playerInput", {packetNum = self.packetNumberSend, inputLeft = ownPlayer.inputLeft, inputRight = ownPlayer.inputRight, inputJump = ownPlayer.inputJump}, "unsequenced")
+            self.client:emit("playerInput", {packetNum = self.packetNumberSend, inputLeft = ownPlayer.inputLeft, inputRight = ownPlayer.inputRight, inputJump = ownPlayer.inputJump, targetX = ownPlayer.weapon.target.x, targetY = ownPlayer.weapon.target.y}, "unsequenced")
 
             -- quantize player positions to match simulations
             ownPlayer.position.x = xPos

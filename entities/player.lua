@@ -20,6 +20,8 @@ function Player:initialize(world, x, y, color)
     self:reset(world)
 
 	self.color = color or {math.random(0, 225), math.random(0, 225), math.random(0, 225)}
+
+    self.index = 0
 end
 
 function Player:reset(world)
@@ -40,19 +42,18 @@ function Player:reset(world)
     self.jumpTime = 0.15
     self.jumpTimer = 0
 
-    self.hasDashed = false
-    self.dashTime = 0.5
-    self.dashTimer = 0
-    self.dashSpeed = 4000
-
     self.inputLeft = false
 	self.inputRight = false
 	self.inputJump = false
+    self.inputShoot = false
 
 	self.errorOffset = vector(0, 0)
 
 	self.weapon = Pistol:new()
     self.weapon:attach(self, self.width/2, self.height/2)
+
+    self.maxHealth = 100
+    self.health = self.maxHealth
 end
 
 function Player:joystickpressed(joystick, button)
@@ -78,12 +79,12 @@ function Player:joystickpressed(joystick, button)
 
     -- Left button
     if button == 5 then
-        self:dash(-1)
+
     end
     
     -- Right button
     if button == 6 then
-        self:dash(1)
+
     end
 end
 
@@ -93,13 +94,13 @@ function Player:keypressed(key, code)
 	end
 
 	if key == "lshift" then
-        self:dash(self.facing)
+
     end
 end
 
 function Player:mousepressed(x, y, button)
     if button == 2 then
-        self:dash(self.facing)
+
     end
 end
 
@@ -133,10 +134,11 @@ function Player:getAccelX(joystick)
     return 0
 end
 
-function Player:input(joystick)
+function Player:input(joystick, camera)
 	self.acceleration.x = self:getAccelX(joystick)
     
 	self.inputJump = false
+    self.inputShoot = false
 
 	if joystick then
 	    if joystick:isGamepadDown("a") then
@@ -149,6 +151,19 @@ function Player:input(joystick)
 	    self:jump()
 	    self.inputJump = true
 	end
+
+    if love.mouse.isDown(1) then
+        --self:shoot()
+        if self.weapon.readyToFire then
+            self.inputShoot = true
+            self.weapon.timer = (1 / self.weapon.rateOfFire)
+        end
+    end
+
+    if self.inputMode == "keyboardmouse" then
+        local mouseX, mouseY = camera:mousePosition()
+        self.weapon:aimAt(mouseX - self.weapon.position.x, mouseY - self.weapon.position.y)
+    end
 end
 
 function Player:simulateInput()
@@ -165,8 +180,8 @@ function Player:simulateInput()
     end
 end
 
-function Player:shoot()
-    self.weapon:shoot()
+function Player:shoot(world, index)
+    self.weapon:shoot(world, index)
 end
 
 function Player:update(dt, world, host)
@@ -183,6 +198,8 @@ function Player:update(dt, world, host)
     if errorDist <= 0.01 then
     	self.errorOffset = vector(0, 0)
     end
+
+    self.weapon:update(dt)
 end
 
 function Player:move(dt, world)
@@ -238,6 +255,10 @@ function Player:draw(showRealPos)
 		love.graphics.rectangle('fill', self.position.x, self.position.y, self.width, self.height)
 	end
 
+    love.graphics.setColor(255, 0, 0)
+    love.graphics.rectangle('fill', self.position.x, self.position.y - 7, self.width * self.health/self.maxHealth, 5)
+
+    self.weapon:draw()
 	love.graphics.setColor(255, 255, 255)
 end
 

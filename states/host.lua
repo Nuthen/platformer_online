@@ -80,6 +80,28 @@ function host:init()
             player.inputLeft = data.inputLeft
             player.inputRight = data.inputRight
             player.inputJump = data.inputJump
+
+            player.weapon.target.x = data.targetX
+            player.weapon.target.y = data.targetY
+        end
+    end)
+
+    self.server:on("playerShoot", function(data, peer)
+        local index = peer.server:index()
+        local player = self.players.objects[index]
+
+        local packetNumber = data.packetNum
+        local receivedPacket = self.packetNumberRec[index]
+
+        if packetNumber < receivedPacket then
+            self.unsequencedPackets = self.unsequencedPackets + 1
+        else
+            self.packetNumberRec[index] = packetNumber
+
+            player.weapon.target.x = data.targetX
+            player.weapon.target.y = data.targetY
+
+            player:shoot(self.world, index)
         end
     end)
 end
@@ -88,6 +110,7 @@ function host:addPlayer(peer)
     local index = peer.server:index()
     local player = Player:new(self.world, 1700, 1300) -- starting location
     self.players:add(index, player)
+    player.index = index
 
     peer:emit("index", peer.server:index()) -- tell the client who they are
     self.server:emitToAll("newPlayer", {index = index, x = player.position.x, y = player.position.y, color = player.color})
@@ -176,7 +199,7 @@ function host:update(dt)
             local jumpTimer = player.jumpTimer
 
             -- possible location for optimization: only send an update if it has changed since the last acked packet from the server
-            self.server:emitToAll("playerState", {packetNum = self.packetNumberSend, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump}, "unsequenced")
+            self.server:emitToAll("playerState", {packetNum = self.packetNumberSend, index = k, x = xPos, y = yPos, vx = xVel, vy = yVel, isJ = isJumping, jT = jumpTimer, inputLeft = player.inputLeft, inputRight = player.inputRight, inputJump = player.inputJump, targetX = player.weapon.target.x, targetY = player.weapon.target.y, health = player.health}, "unsequenced")
         
             -- quantize player positions to match simulations
             player.position.x = xPos
